@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,9 +54,8 @@ func processPhotos() error {
 
 	// 计数器
 	totalFiles := 0
-	exifFiles := 0
-	videoFiles := 0
-	modTimeFiles := 0
+	movedFiles := 0
+	skippedFiles := 0
 
 	// 遍历目录
 	err = filepath.Walk(absDir, func(path string, info os.FileInfo, err error) error {
@@ -82,6 +82,12 @@ func processPhotos() error {
 			return nil
 		}
 
+		// 跳过已经在年月目录中的文件
+		if isAlreadyInYearMonthDir(path, absDir) {
+			fmt.Printf("跳过: %s 已在年月目录中\n", path)
+			return nil
+		}
+
 		totalFiles++
 
 		// 获取照片时间信息
@@ -91,17 +97,64 @@ func processPhotos() error {
 			return nil
 		}
 
-		// 根据时间来源进行区分显示
+		// 创建年月目录 (格式: 2025-01)
+		yearMonth := photoTime.Format("2006-01")
+		targetDir := filepath.Join(absDir, yearMonth)
+
+		// 创建目录（如果不存在）
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			fmt.Printf("错误: 无法创建目录 %s: %v\n", targetDir, err)
+			return nil
+		}
+
+		// 生成新的文件名（自动处理同一秒的文件）
+		newFileName := generateNewFileName(targetDir, info.Name(), photoTime, ext)
+
+		// 如果文件名无需改动，直接移动到目标目录
+		if newFileName == info.Name() {
+			targetPath := filepath.Join(targetDir, newFileName)
+			if err := moveFile(path, targetPath); err != nil {
+				fmt.Printf("错误: 无法移动文件 %s 到 %s: %v\n", path, targetPath, err)
+				return nil
+			}
+			movedFiles++
+			switch timeSource {
+			case "EXIF":
+				fmt.Printf("[EXIF] %s -> %s: %s (无需重命名)\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+			case "视频元数据":
+				fmt.Printf("[视频元数据] %s -> %s: %s (无需重命名)\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+			default:
+				fmt.Printf("[文件时间] %s -> %s: %s (无需重命名)\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+			}
+			return nil
+		}
+
+		// 需要重命名的情况
+		targetPath := filepath.Join(targetDir, newFileName)
+
+		// 检查目标文件是否已存在
+		if _, err := os.Stat(targetPath); err == nil {
+			fmt.Printf("跳过: 目标文件 %s 已存在\n", targetPath)
+			skippedFiles++
+			return nil
+		}
+
+		// 移动文件
+		if err := moveFile(path, targetPath); err != nil {
+			fmt.Printf("错误: 无法移动文件 %s 到 %s: %v\n", path, targetPath, err)
+			return nil
+		}
+
+		movedFiles++
+
+		// 显示处理信息
 		switch timeSource {
 		case "EXIF":
-			exifFiles++
-			fmt.Printf("[EXIF] %s: %s\n", path, photoTime.Format("2006-01-02 15:04:05"))
+			fmt.Printf("[EXIF] %s -> %s: %s\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 		case "视频元数据":
-			videoFiles++
-			fmt.Printf("[视频元数据] %s: %s\n", path, photoTime.Format("2006-01-02 15:04:05"))
+			fmt.Printf("[视频元数据] %s -> %s: %s\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 		default:
-			modTimeFiles++
-			fmt.Printf("[文件时间] %s: %s\n", path, photoTime.Format("2006-01-02 15:04:05"))
+			fmt.Printf("[文件时间] %s -> %s: %s\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 		}
 
 		return nil
@@ -113,9 +166,8 @@ func processPhotos() error {
 
 	fmt.Printf("\n处理完成！\n")
 	fmt.Printf("总计找到 %d 个照片/视频文件\n", totalFiles)
-	fmt.Printf("从EXIF获取时间: %d 个\n", exifFiles)
-	fmt.Printf("从视频元数据获取时间: %d 个\n", videoFiles)
-	fmt.Printf("从文件时间获取: %d 个\n", modTimeFiles)
+	fmt.Printf("成功移动: %d 个\n", movedFiles)
+	fmt.Printf("跳过: %d 个\n", skippedFiles)
 
 	return nil
 }
@@ -231,4 +283,162 @@ func getVideoCreationTime(filePath string) (time.Time, error) {
 	}
 
 	return creationTime, nil
+}
+
+// generateNewFileName 生成新的文件名，处理同一秒的文件，并自动重命名已存在的文件
+func generateNewFileName(targetDir string, originalName string, photoTime time.Time, ext string) string {
+	// 检查是否已经是标准格式
+	if isStandardFileName(originalName, ext) {
+		return originalName
+	}
+
+	// 根据文件类型选择前缀
+	prefix := "IMG"
+	if isVideoFile(ext) {
+		prefix = "VID"
+	}
+
+	// 基础文件名: IMG_年月_时分秒
+	baseName := fmt.Sprintf("%s_%s", prefix, photoTime.Format("20060102_150405"))
+
+	// 首先检查基础文件名是否存在
+	baseFileName := fmt.Sprintf("%s%s", baseName, ext)
+	baseTargetPath := filepath.Join(targetDir, baseFileName)
+
+	// 如果基础文件名不存在，使用它
+	if _, err := os.Stat(baseTargetPath); os.IsNotExist(err) {
+		return baseFileName
+	}
+
+	// 基础文件名已存在，需要重命名已存在的文件为_001，然后继续顺序编号
+	// 首先重命名已存在的文件
+	if err := renameExistingFileToFirstSequential(targetDir, baseFileName, baseName, ext); err != nil {
+		fmt.Printf("警告: 无法重命名已存在的文件 %s: %v\n", baseTargetPath, err)
+	}
+
+	// 现在从_001开始为当前文件寻找可用的文件名
+	for i := 1; i <= 999; i++ {
+		newName := fmt.Sprintf("%s_%03d%s", baseName, i, ext)
+		targetPath := filepath.Join(targetDir, newName)
+
+		// 检查文件是否存在
+		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+			return newName
+		}
+	}
+
+	// 如果所有序号都用完了，返回带时间戳的文件名
+	return fmt.Sprintf("%s_%d%s", baseName, time.Now().UnixNano()%1000, ext)
+}
+
+// isStandardFileName 检查是否已经是标准文件名格式（支持带序号的格式）
+func isStandardFileName(name string, ext string) bool {
+	// 移除扩展名
+	nameWithoutExt := strings.TrimSuffix(name, ext)
+
+	// 检查图片格式: IMG_年月_时分秒 或 IMG_年月_时分秒_序号
+	if strings.HasPrefix(nameWithoutExt, "IMG_") {
+		// 基础格式: IMG_年月_时分秒 (15字符)
+		if len(nameWithoutExt) == 15 {
+			return true
+		}
+		// 带序号格式: IMG_年月_时分秒_001 (19字符)
+		if len(nameWithoutExt) == 19 && strings.Count(nameWithoutExt, "_") == 3 {
+			// 检查最后一部分是否为数字
+			parts := strings.Split(nameWithoutExt, "_")
+			if len(parts) == 4 {
+				if _, err := strconv.Atoi(parts[3]); err == nil {
+					return true
+				}
+			}
+		}
+	}
+
+	// 检查视频格式: VID_年月_时分秒 或 VID_年月_时分秒_序号
+	if strings.HasPrefix(nameWithoutExt, "VID_") {
+		// 基础格式: VID_年月_时分秒 (15字符)
+		if len(nameWithoutExt) == 15 {
+			return true
+		}
+		// 带序号格式: VID_年月_时分秒_001 (19字符)
+		if len(nameWithoutExt) == 19 && strings.Count(nameWithoutExt, "_") == 3 {
+			// 检查最后一部分是否为数字
+			parts := strings.Split(nameWithoutExt, "_")
+			if len(parts) == 4 {
+				if _, err := strconv.Atoi(parts[3]); err == nil {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// isAlreadyInYearMonthDir 检查文件是否已经在年月目录中
+func isAlreadyInYearMonthDir(filePath string, baseDir string) bool {
+	relPath, err := filepath.Rel(baseDir, filePath)
+	if err != nil {
+		return false
+	}
+
+	// 分割路径
+	parts := strings.Split(relPath, string(filepath.Separator))
+	if len(parts) < 2 {
+		return false
+	}
+
+	// 检查第一级目录是否符合年月格式 (2025-01)
+	firstDir := parts[0]
+	if len(firstDir) != 7 || firstDir[4] != '-' {
+		return false
+	}
+
+	// 检查是否为有效的年月
+	_, err = time.Parse("2006-01", firstDir)
+	return err == nil
+}
+
+// moveFile 移动文件并保持时间戳
+func moveFile(src, dst string) error {
+	// 获取源文件的信息
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	// 复制文件内容
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	// 写入目标文件
+	err = os.WriteFile(dst, input, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+
+	// 保持原始时间戳
+	err = os.Chtimes(dst, srcInfo.ModTime(), srcInfo.ModTime())
+	if err != nil {
+		return err
+	}
+
+	// 删除源文件
+	return os.Remove(src)
+}
+
+// renameExistingFileToFirstSequential 将已存在的基础文件重命名为第一个序号文件
+func renameExistingFileToFirstSequential(targetDir string, oldFileName string, baseName string, ext string) error {
+	oldPath := filepath.Join(targetDir, oldFileName)
+	newPath := filepath.Join(targetDir, fmt.Sprintf("%s_001%s", baseName, ext))
+
+	// 检查目标文件是否已存在
+	if _, err := os.Stat(newPath); err == nil {
+		return fmt.Errorf("目标文件 %s 已存在", newPath)
+	}
+
+	// 重命名文件
+	return os.Rename(oldPath, newPath)
 }
