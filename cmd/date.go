@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 )
 
 var dir string
+var verbose bool
 
 // dateCmd represents the date command
 var dateCmd = &cobra.Command{
@@ -37,6 +39,7 @@ var dateCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(dateCmd)
 	dateCmd.Flags().StringVarP(&dir, "dir", "d", ".", "指定要处理的目录")
+	dateCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "启用详细输出，如果不启用详细输出则默认会启用文件日志，除非手动关闭了文件日志输出")
 }
 
 // processPhotos 处理目录中的照片
@@ -47,7 +50,32 @@ func processPhotos() error {
 		return fmt.Errorf("获取目录绝对路径失败: %v", err)
 	}
 
+	// 输出开始信息
 	fmt.Printf("开始处理目录: %s\n", absDir)
+	if verbose {
+		fmt.Printf("处理时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+		fmt.Printf("=====================================\n")
+	}
+
+	// 创建处理日志文件
+	var logFile *os.File
+	var logWriter *os.File
+	logFileName := time.Now().Format("2006-01-02_15_04_05") + ".log"
+	logFilePath := filepath.Join(absDir, logFileName)
+	logFile, err = os.Create(logFilePath)
+	if err != nil {
+		log.Fatalf("无法创建日志文件 %s: %v", logFilePath, err)
+	} else {
+		defer logFile.Close()
+		logWriter = logFile
+		if verbose {
+			fmt.Printf("日志文件已创建: %s\n", logFilePath)
+		}
+	}
+
+	fmt.Fprintf(logWriter, "开始处理目录: %s\n", absDir)
+	fmt.Fprintf(logWriter, "处理时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(logWriter, "=====================================\n")
 
 	// 支持的图片格式
 	supportedFormats := []string{".jpg", ".jpeg", ".png", ".tiff", ".tif", ".heic", ".mp4", ".mov", ".avi"}
@@ -56,6 +84,8 @@ func processPhotos() error {
 	totalFiles := 0
 	movedFiles := 0
 	skippedFiles := 0
+
+	outputText := ""
 
 	// 遍历目录
 	err = filepath.Walk(absDir, func(path string, info os.FileInfo, err error) error {
@@ -84,7 +114,11 @@ func processPhotos() error {
 
 		// 跳过已经在年月目录中的文件
 		if isAlreadyInYearMonthDir(path, absDir) {
-			fmt.Printf("跳过: %s 已在年月目录中\n", path)
+			outputText = fmt.Sprintf("跳过: %s 已在年月目录中\n", path)
+			if verbose {
+				fmt.Println(outputText)
+			}
+			fmt.Fprintln(logWriter, outputText)
 			return nil
 		}
 
@@ -93,7 +127,11 @@ func processPhotos() error {
 		// 获取照片时间信息
 		photoTime, timeSource, err := getPhotoTimeInfo(path)
 		if err != nil {
-			fmt.Printf("警告: 无法获取 %s 的时间信息: %v\n", path, err)
+			outputText = fmt.Sprintf("警告: 无法获取 %s 的时间信息: %v\n", path, err)
+			if verbose {
+				fmt.Println(outputText)
+			}
+			fmt.Fprintln(logWriter, outputText)
 			return nil
 		}
 
@@ -103,7 +141,11 @@ func processPhotos() error {
 
 		// 创建目录（如果不存在）
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			fmt.Printf("错误: 无法创建目录 %s: %v\n", targetDir, err)
+			outputText = fmt.Sprintf("错误: 无法创建目录 %s: %v\n", targetDir, err)
+			if verbose {
+				fmt.Println(outputText)
+			}
+			fmt.Fprintln(logWriter, outputText)
 			return nil
 		}
 
@@ -114,18 +156,32 @@ func processPhotos() error {
 		if newFileName == info.Name() {
 			targetPath := filepath.Join(targetDir, newFileName)
 			if err := moveFile(path, targetPath); err != nil {
-				fmt.Printf("错误: 无法移动文件 %s 到 %s: %v\n", path, targetPath, err)
+				outputText = fmt.Sprintf("错误: 无法移动文件 %s 到 %s: %v\n", path, targetPath, err)
+				if verbose {
+					fmt.Println(outputText)
+				}
+
+				fmt.Fprintln(logWriter, outputText)
 				return nil
 			}
 			movedFiles++
+
+			// 显示处理信息
+			var message string
 			switch timeSource {
 			case "EXIF":
-				fmt.Printf("[EXIF] %s -> %s: %s (无需重命名)\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
-			case "视频元数据":
-				fmt.Printf("[视频元数据] %s -> %s: %s (无需重命名)\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+				message = fmt.Sprintf("[EXIF] %s -> %s: %s (无需重命名)", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+			case "VIDEO_META":
+				message = fmt.Sprintf("[视频元数据] %s -> %s: %s (无需重命名)", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 			default:
-				fmt.Printf("[文件时间] %s -> %s: %s (无需重命名)\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+				message = fmt.Sprintf("[文件时间] %s -> %s: %s (无需重命名)", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 			}
+
+			if verbose {
+				fmt.Println(message)
+			}
+
+			fmt.Fprintln(logWriter, message)
 			return nil
 		}
 
@@ -134,28 +190,45 @@ func processPhotos() error {
 
 		// 检查目标文件是否已存在
 		if _, err := os.Stat(targetPath); err == nil {
-			fmt.Printf("跳过: 目标文件 %s 已存在\n", targetPath)
+			outputText = fmt.Sprintf("跳过: 目标文件 %s 已存在\n", targetPath)
+			if verbose {
+				fmt.Println(outputText)
+			}
+
+			fmt.Fprintln(logWriter, outputText)
 			skippedFiles++
 			return nil
 		}
 
 		// 移动文件
 		if err := moveFile(path, targetPath); err != nil {
-			fmt.Printf("错误: 无法移动文件 %s 到 %s: %v\n", path, targetPath, err)
+			outputText = fmt.Sprintf("错误: 无法移动文件 %s 到 %s: %v\n", path, targetPath, err)
+			if verbose {
+				fmt.Println(outputText)
+			}
+
+			fmt.Fprintln(logWriter, outputText)
 			return nil
 		}
 
 		movedFiles++
 
 		// 显示处理信息
+		var message string
 		switch timeSource {
 		case "EXIF":
-			fmt.Printf("[EXIF] %s -> %s: %s\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
-		case "视频元数据":
-			fmt.Printf("[视频元数据] %s -> %s: %s\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+			message = fmt.Sprintf("[EXIF] %s -> %s: %s", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+		case "VIDEO_META":
+			message = fmt.Sprintf("[视频元数据] %s -> %s: %s", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 		default:
-			fmt.Printf("[文件时间] %s -> %s: %s\n", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
+			message = fmt.Sprintf("[文件时间] %s -> %s: %s", path, targetPath, photoTime.Format("2006-01-02 15:04:05"))
 		}
+
+		if verbose {
+			fmt.Println(message)
+		}
+
+		fmt.Fprintln(logWriter, message)
 
 		return nil
 	})
@@ -164,10 +237,20 @@ func processPhotos() error {
 		return fmt.Errorf("遍历目录失败: %v", err)
 	}
 
+	// 输出统计信息
 	fmt.Printf("\n处理完成！\n")
 	fmt.Printf("总计找到 %d 个照片/视频文件\n", totalFiles)
 	fmt.Printf("成功移动: %d 个\n", movedFiles)
 	fmt.Printf("跳过: %d 个\n", skippedFiles)
+	fmt.Printf("=====================================\n")
+	fmt.Printf("处理结束时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+
+	fmt.Fprintf(logWriter, "\n处理完成！\n")
+	fmt.Fprintf(logWriter, "总计找到 %d 个照片/视频文件\n", totalFiles)
+	fmt.Fprintf(logWriter, "成功移动: %d 个\n", movedFiles)
+	fmt.Fprintf(logWriter, "跳过: %d 个\n", skippedFiles)
+	fmt.Fprintf(logWriter, "=====================================\n")
+	fmt.Fprintf(logWriter, "处理结束时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 
 	return nil
 }
@@ -181,7 +264,7 @@ func getPhotoTimeInfo(filePath string) (time.Time, string, error) {
 		// 视频文件：尝试从MP4元数据获取创建时间
 		videoTime, err := getVideoCreationTime(filePath)
 		if err == nil && !videoTime.IsZero() {
-			return videoTime, "视频元数据", nil
+			return videoTime, "VIDEO_META", nil
 		}
 	} else {
 		// 图片文件：首先尝试从EXIF数据获取拍摄日期
@@ -197,7 +280,7 @@ func getPhotoTimeInfo(filePath string) (time.Time, string, error) {
 		return time.Time{}, "", fmt.Errorf("无法获取文件信息: %v", err)
 	}
 
-	return info.ModTime(), "文件时间", nil
+	return info.ModTime(), "FILE_TIME", nil
 }
 
 // isVideoFile 判断是否为视频文件
