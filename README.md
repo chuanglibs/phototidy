@@ -108,6 +108,9 @@ go build -ldflags="-s -w" -o phototidy .
 
 要发布编译后的可执行文件，请确保：
 
+- 自动发布：当打上 `v*.*.*` 格式的标签并推送时，自动构建多平台二进制文件并发布到 GitHub Releases
+  - 针对 macOS 平台，自动移除 `com.apple.quarantine` 属性，防止系统弹出安全警告
+
 - 正确使用 `go build` 命令进行编译
 - 通过环境变量（GOOS/GOARCH）进行交叉编译以支持多平台（Linux/amd64, Linux/arm64, Windows/amd64, macOS/amd64, macOS/arm64）
 - 使用 `-ldflags="-s -w"` 优化编译，减小二进制文件大小
