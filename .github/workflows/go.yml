@@ -1,0 +1,111 @@
+name: PhotoTidy Tool Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # 匹配类似 v1.0.0, v2.1.0-beta 的标签
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest  # 在最新的Ubuntu系统上运行
+    strategy:
+      matrix:
+        # 定义需要编译的平台和架构组合矩阵
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin  # macOS 的系统标识
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.4'  # 指定你项目使用的Go版本
+
+      - name: Build
+        run: |
+          # 打印当前工作目录和文件列表
+          echo "当前工作目录: $(pwd)"
+          echo "目录内容:"
+          ls -la
+          
+          # 设置环境变量并显示
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          echo "设置环境变量: GOOS=$GOOS, GOARCH=$GOARCH"
+          
+          # 显示Go环境信息
+          go env
+          
+          # 进行交叉编译
+          echo "正在构建 ${{ matrix.goos }}/${{ matrix.goarch }} 平台..."
+          go build -ldflags="-s -w" -o phototidy .
+          
+          # 检查编译是否成功
+          BUILD_STATUS=$?
+          echo "构建返回状态: $BUILD_STATUS"
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "构建失败!"
+            exit 1
+          fi
+          
+          # 检查生成的可执行文件
+          if [ -f "phototidy" ]; then
+            echo "构建成功，生成文件: $(ls -la phototidy)"
+            echo "文件类型: $(file phototidy)"
+          else
+            echo "错误：未找到构建产物 phototidy"
+            ls -la
+            exit 1
+          fi
+          
+          # 根据系统类型重命名和打包
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv phototidy phototidy.exe
+            echo "创建Windows压缩包..."
+            zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy.exe LICENSE README.md
+          else
+            echo "创建Unix压缩包..."
+            zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy LICENSE README.md
+          fi
+          
+          # 检查压缩包是否创建成功
+          echo "压缩包详情:"
+          ls -la phototidy-*.zip
+          echo "压缩包内容:"
+          zip -sf phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            phototidy-*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+      # 额外的日志输出，用于验证发布内容
+      - name: Debug - List Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "准备发布的资产文件:"
+          ls -la phototidy-*.zip
+          echo "压缩包内容验证:"
+          for zipfile in phototidy-*.zip; do
+            if [ -f "$zipfile" ]; then
+              echo "--- $zipfile 内容 ---"
+              unzip -l "$zipfile"
+            fi
+          done
