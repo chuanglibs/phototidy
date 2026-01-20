@@ -38,7 +38,7 @@ git clone https://github.com/chuanglibs/phototidy.git
 cd phototidy
 
 # 构建二进制文件
-go build -o phototidy .
+go build -ldflags="-s -w" -o phototidy .
 ```
 
 或者直接从 [Releases](https://github.com/chuanglibs/phototidy/releases) 页面下载预编译的二进制文件。
@@ -111,6 +111,8 @@ go build -o phototidy .
  - macOS (amd64/arm64)
 
  每个平台的二进制文件都会打包成 ZIP 格式，包含程序可执行文件、许可证和 README 文档。
+
+ 发布流程包含详细的调试信息，包括环境变量设置、Go环境信息、构建状态检查、可执行文件类型检查以及压缩包内容验证。
 
 ## 开发
 

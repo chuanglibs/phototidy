@@ -38,12 +38,22 @@ jobs:
           echo "目录内容:"
           ls -la
           
-          # 根据矩阵变量设置环境，并进行交叉编译
+          # 设置环境变量并显示
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          echo "设置环境变量: GOOS=$GOOS, GOARCH=$GOARCH"
+          
+          # 显示Go环境信息
+          go env
+          
+          # 进行交叉编译
           echo "正在构建 ${{ matrix.goos }}/${{ matrix.goarch }} 平台..."
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o phototidy .
+          go build -ldflags="-s -w" -o phototidy .
           
           # 检查编译是否成功
-          if [ $? -ne 0 ]; then
+          BUILD_STATUS=$?
+          echo "构建返回状态: $BUILD_STATUS"
+          if [ $BUILD_STATUS -ne 0 ]; then
             echo "构建失败!"
             exit 1
           fi
@@ -51,6 +61,7 @@ jobs:
           # 检查生成的可执行文件
           if [ -f "phototidy" ]; then
             echo "构建成功，生成文件: $(ls -la phototidy)"
+            echo "文件类型: $(file phototidy)"
           else
             echo "错误：未找到构建产物 phototidy"
             ls -la
@@ -68,7 +79,10 @@ jobs:
           fi
           
           # 检查压缩包是否创建成功
+          echo "压缩包详情:"
           ls -la phototidy-*.zip
+          echo "压缩包内容:"
+          zip -sf phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
