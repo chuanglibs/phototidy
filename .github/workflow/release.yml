@@ -1,0 +1,54 @@
+name: PhotoTidy Tool Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # 匹配类似 v1.0.0, v2.1.0-beta 的标签
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest  # 在最新的Ubuntu系统上运行
+    strategy:
+      matrix:
+        # 定义需要编译的平台和架构组合矩阵
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin  # macOS 的系统标识
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.4'  # 指定你项目使用的Go版本
+
+      - name: Build
+        run: |
+          # 根据矩阵变量设置环境，并进行交叉编译
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o phototidy .
+          # 根据系统类型重命名和打包
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv phototidy phototidy.exe
+            zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy.exe LICENSE README.md
+          else
+            zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy LICENSE README.md
+          fi
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            phototidy-*.zip
+          # body_path: CHANGELOG.md  # 可以指定一个文件作为Release说明
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

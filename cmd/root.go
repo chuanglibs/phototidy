@@ -5,6 +5,7 @@ Copyright © 2025 Chuang Libs <chan.toddd@gmail.com>
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -13,13 +14,9 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "phototidy",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "一个用于整理照片的小工具",
+	Long: `一个用于整理照片的小工具
+把照片、视频文件按照日期分类到指定目录，例： phototidy date -d <目录>`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	// Run: func(cmd *cobra.Command, args []string) { },
@@ -35,6 +32,8 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.Flags().BoolP("help", "h", false, "查看 phototidy 的帮助")
+	setCustomHelpCommand(rootCmd)
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
@@ -43,5 +42,26 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+func setCustomHelpCommand(rootCmd *cobra.Command) {
+	rootCmd.SetHelpCommand(&cobra.Command{
+		Use:   "help [command]",
+		Short: "查看命令的帮助信息",
+		Long:  "为所有命令显示帮助信息",
+		Args:  cobra.ArbitraryArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) == 0 {
+				rootCmd.Help()
+				return
+			}
+
+			c, _, err := rootCmd.Find(args)
+			if err != nil || c == nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Unknown help topic: %s\n", args[0])
+				return
+			}
+			c.Help()
+		},
+	})
 }

@@ -38,7 +38,7 @@ var dateCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(dateCmd)
-	dateCmd.Flags().StringVarP(&dir, "dir", "d", ".", "指定要处理的目录")
+	dateCmd.Flags().StringVarP(&dir, "dir", "d", ".", "指定要处理的目录，默认是当前目录")
 	dateCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "启用详细输出，如果不启用详细输出则默认会启用文件日志，除非手动关闭了文件日志输出")
 }
 
