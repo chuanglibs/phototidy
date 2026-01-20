@@ -70,6 +70,15 @@ go build -ldflags="-s -w" -o phototidy .
 ./phototidy date --help
 ```
 
+### Mac系统注意事项
+使用MacOS时，可能会遇到 `com.apple.quarantine` 属性问题，导致程序无法正常运行，在使用前可以先用命令移除该属性。
+
+```zsh
+xattr -d com.apple.quarantine phototidy
+```
+
+### 文件命名规则
+
 ## 文件命名规则
 
 - 图片文件：`IMG_YYYYMMDD_HHMMSS.ext`
