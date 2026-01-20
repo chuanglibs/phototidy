@@ -79,7 +79,7 @@ jobs:
             if [ "${{ matrix.goos }}" = "darwin" ]; then
               echo "检测到macOS平台，移除quarantine属性..."
               # 创建临时脚本来处理quarantine属性
-              cat << 'EOF' > remove_quarantine.sh
+              cat > remove_quarantine.sh << 'EOF'
 #!/bin/bash
 # 检查xattr命令是否存在
 if command -v xattr >/dev/null 2>&1; then
