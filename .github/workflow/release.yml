@@ -90,6 +90,22 @@ jobs:
         with:
           files: |
             phototidy-*.zip
-          # body_path: CHANGELOG.md  # 可以指定一个文件作为Release说明
+          draft: false
+          prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+      # 额外的日志输出，用于验证发布内容
+      - name: Debug - List Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "准备发布的资产文件:"
+          ls -la phototidy-*.zip
+          echo "压缩包内容验证:"
+          for zipfile in phototidy-*.zip; do
+            if [ -f "$zipfile" ]; then
+              echo "--- $zipfile 内容 ---"
+              unzip -l "$zipfile"
+            fi
+          done
