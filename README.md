@@ -104,11 +104,13 @@ go build -o phototidy .
 
 ## 自动发布
 
-本项目配置了 GitHub Actions，当创建带有 `v*.*.*` 格式的标签时，会自动构建并发布以下平台的二进制文件：
+ 本项目配置了 GitHub Actions，当创建带有 `v*.*.*` 格式的标签时，会自动构建并发布以下平台的二进制文件：
 
-- Linux (amd64/arm64)
-- Windows (amd64)
-- macOS (amd64/arm64)
+ - Linux (amd64/arm64)
+ - Windows (amd64)
+ - macOS (amd64/arm64)
+
+ 每个平台的二进制文件都会打包成 ZIP 格式，包含程序可执行文件、许可证和 README 文档。
 
 ## 开发
 

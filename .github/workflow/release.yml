@@ -33,15 +33,42 @@ jobs:
 
       - name: Build
         run: |
+          # 打印当前工作目录和文件列表
+          echo "当前工作目录: $(pwd)"
+          echo "目录内容:"
+          ls -la
+          
           # 根据矩阵变量设置环境，并进行交叉编译
+          echo "正在构建 ${{ matrix.goos }}/${{ matrix.goarch }} 平台..."
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o phototidy .
+          
+          # 检查编译是否成功
+          if [ $? -ne 0 ]; then
+            echo "构建失败!"
+            exit 1
+          fi
+          
+          # 检查生成的可执行文件
+          if [ -f "phototidy" ]; then
+            echo "构建成功，生成文件: $(ls -la phototidy)"
+          else
+            echo "错误：未找到构建产物 phototidy"
+            ls -la
+            exit 1
+          fi
+          
           # 根据系统类型重命名和打包
           if [ "${{ matrix.goos }}" = "windows" ]; then
             mv phototidy phototidy.exe
+            echo "创建Windows压缩包..."
             zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy.exe LICENSE README.md
           else
+            echo "创建Unix压缩包..."
             zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy LICENSE README.md
           fi
+          
+          # 检查压缩包是否创建成功
+          ls -la phototidy-*.zip
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
