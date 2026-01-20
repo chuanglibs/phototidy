@@ -78,20 +78,13 @@ jobs:
             # 对于macOS平台，先移除quarantine属性
             if [ "${{ matrix.goos }}" = "darwin" ]; then
               echo "检测到macOS平台，移除quarantine属性..."
-              # 创建临时脚本来处理quarantine属性
-              cat > remove_quarantine.sh << 'EOF'
-#!/bin/bash
-# 检查xattr命令是否存在
-if command -v xattr >/dev/null 2>&1; then
-  echo "移除quarantine属性..."
-  xattr -d com.apple.quarantine phototidy 2>/dev/null || true
-else
-  echo "xattr命令不可用，跳过quarantine属性移除"
-fi
-EOF
-              chmod +x remove_quarantine.sh
-              ./remove_quarantine.sh
-              rm remove_quarantine.sh
+              # 检查xattr命令是否存在，如果存在则移除quarantine属性
+              if command -v xattr >/dev/null 2>&1; then
+                echo "xattr命令可用，移除quarantine属性..."
+                xattr -d com.apple.quarantine phototidy 2>/dev/null || true
+              else
+                echo "警告: xattr命令不可用，无法移除quarantine属性"
+              fi
             fi
             zip phototidy-${{ matrix.goos }}-${{ matrix.goarch }}.zip phototidy LICENSE README.md
           fi
